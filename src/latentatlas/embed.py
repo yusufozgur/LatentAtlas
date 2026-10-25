@@ -132,14 +132,33 @@ def main() -> None:
     todo = [row for row in rows if row["embedding"] is None]
     print(f"{len(rows) - len(todo)} of {len(rows)} files cached, {len(todo)} to embed")
 
+
     if todo:
         model = load_model()
         for row in tqdm(todo, desc="Embedding"):
-            row["embedding"] = embed_file(model, Path(row["path"]), row["modality"])
-            # save after every file so an interrupted run keeps its progress
-            write_output(args.output, [r for r in rows if r["embedding"] is not None])
+            try:
+                tqdm.write(f"Processing: {row['path']}")
+
+                row["embedding"] = embed_file(
+                    model,
+                    Path(row["path"]),
+                    row["modality"],
+                )
+
+            except Exception as exc:
+                tqdm.write(
+                    f"FAILED: {row['path']}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                continue
+
+            # Save immediately after each successful embedding
+            write_output(
+                args.output,
+                [r for r in rows if r["embedding"] is not None],
+            )
     else:
-        write_output(args.output, rows)  # still drops rows for files that were removed
+        write_output(args.output, rows)
     print(f"Wrote {len(rows)} embeddings to {args.output}")
 
 
