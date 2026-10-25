@@ -20,7 +20,7 @@ dependencies = [
     "polars>=2.0.0",
     "sentence-transformers>=6.2.0",
     "tqdm>=4.70.1",
-    "transformers>=5.20.2",
+    "transformers>=5.20.2", "archetypes>=0.12.2,<0.13",
 ]
 
 [build-system]
@@ -43,6 +43,7 @@ marimo = ">=0.25.1,<0.26"
 plotly = ">=7.1.0,<8"
 scikit-learn = ">=1.9.1,<2"
 umap-learn = ">=0.5.12,<0.6"
+numpy = ">=2.5.4,<3"
 
 [tool.pixi.pypi-dependencies]
 latentatlas = { path = ".", editable = true }

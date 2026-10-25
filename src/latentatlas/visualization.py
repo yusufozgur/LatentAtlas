@@ -19,8 +19,11 @@ def _():
     from sklearn.decomposition import PCA
     from torchcodec.decoders import VideoDecoder
     import umap
+    from archetypes import AA
+    import numpy as np
 
     return (
+        AA,
         Image,
         PCA,
         Path,
@@ -29,6 +32,7 @@ def _():
         html,
         io,
         mo,
+        np,
         pl,
         px,
         subprocess,
@@ -64,27 +68,82 @@ def _(EMBEDDINGS_PATH, mo, pl, reload_button):
 
 @app.cell
 def _(mo):
-    projection = mo.ui.radio(["PCA", "UMAP"], value="PCA", label="Projection", inline=True)
+    projection = mo.ui.radio(["PCA", "UMAP","AA"], value="PCA", label="Projection", inline=True)
     projection
     return (projection,)
 
 
 @app.cell
-def _(PCA, embeddings, mo, pl, projection, px, umap):
+def _(AA, PCA, embeddings, mo, np, pl, projection, px, umap):
+
+
+    N_ARCHETYPES = 3
     _vectors = embeddings["embedding"].to_numpy()
 
     if projection.value == "UMAP":
         mo.stop(embeddings.height < 3, mo.md("_UMAP needs at least 3 files._"))
-        # cosine suits unit-length embeddings; a fixed seed keeps the layout stable between runs
         _xy = umap.UMAP(
-            n_neighbors=min(15, embeddings.height - 1), metric="cosine", random_state=42
+            n_neighbors=min(15, embeddings.height - 1),
+            metric="cosine",
+            random_state=42,
         ).fit_transform(_vectors)
         _axis_labels = {"x": "UMAP 1", "y": "UMAP 2"}
+
+    elif projection.value == "AA":
+        mo.stop(
+            embeddings.height < N_ARCHETYPES or N_ARCHETYPES < 2,
+            mo.md(f"_AA requires 2 ≤ N_ARCHETYPES ≤ {embeddings.height}._"),
+        )
+
+        # Reduce dimensionality before fitting AA
+        _pca = PCA(n_components=min(50, *_vectors.shape))
+        _reduced = _pca.fit_transform(_vectors)
+
+        _aa = AA(
+            n_archetypes=N_ARCHETYPES,
+            random_state=42,
+            n_init=3,
+        )
+        _weights = _aa.fit_transform(_reduced)
+
+        if N_ARCHETYPES == 2:
+            # Two archetypes: line segment
+            _xy = np.column_stack([
+                _weights[:, 1],
+                np.zeros(embeddings.height),
+            ])
+            _vertices = np.array([[0, 0], [1, 0]])
+
+        elif N_ARCHETYPES == 3:
+            # Three archetypes: equilateral triangle
+            _vertices = np.array([
+                [0, 0],
+                [1, 0],
+                [0.5, np.sqrt(3) / 2],
+            ])
+            _xy = _weights @ _vertices
+
+        else:
+            # Four or more: project archetype weights into 2D
+            _weight_pca = PCA(n_components=2)
+            _xy = _weight_pca.fit_transform(_weights)
+
+            # Each vertex represents a pure archetype
+            _vertices = _weight_pca.transform(np.eye(N_ARCHETYPES))
+
+        _axis_labels = {
+            "x": "Archetype mixture X",
+            "y": "Archetype mixture Y",
+        }
+
     else:
         _pca = PCA(n_components=2)
         _xy = _pca.fit_transform(_vectors)
         _var = _pca.explained_variance_ratio_
-        _axis_labels = {"x": f"PC1 ({_var[0]:.0%} of variance)", "y": f"PC2 ({_var[1]:.0%} of variance)"}
+        _axis_labels = {
+            "x": f"PC1 ({_var[0]:.0%} of variance)",
+            "y": f"PC2 ({_var[1]:.0%} of variance)",
+        }
 
     points = embeddings.select(
         "row",
@@ -92,7 +151,7 @@ def _(PCA, embeddings, mo, pl, projection, px, umap):
         "modality",
         pl.Series("x", _xy[:, 0]),
         pl.Series("y", _xy[:, 1]),
-        pl.col("path").str.split("_").list.first().str.replace("data/","").alias("category")
+        pl.col("path").str.split("_").list.first().str.replace("data/", "").alias("category"),
     )
 
     projection_fig = px.scatter(
@@ -101,20 +160,49 @@ def _(PCA, embeddings, mo, pl, projection, px, umap):
         y="y",
         color="category",
         hover_name="file",
-        # px splits points into one trace per modality, so carry the row to map selections back
         custom_data=["row"],
         labels=_axis_labels,
         title=f"Embeddings projected to 2D with {projection.value}",
         template="plotly_white",
     )
+
     projection_fig.update_traces(
         marker={"size": 12, "line": {"width": 2, "color": "white"}},
         hovertemplate="<b>%{hovertext}</b><extra></extra>",
     )
+
+    if projection.value == "AA":
+        if N_ARCHETYPES <= 3:
+            # Draw line or triangle boundary
+            _boundary = np.vstack([_vertices, _vertices[0]]) if N_ARCHETYPES == 3 else _vertices
+            projection_fig.add_scatter(
+                x=_boundary[:, 0],
+                y=_boundary[:, 1],
+                mode="lines",
+                line={"color": "gray", "width": 1, "dash": "dash"},
+                hoverinfo="skip",
+                showlegend=False,
+            )
+
+        # Label archetype positions
+        projection_fig.add_scatter(
+            x=_vertices[:, 0],
+            y=_vertices[:, 1],
+            mode="markers+text",
+            text=[f"A{i + 1}" for i in range(N_ARCHETYPES)],
+            textposition="top center",
+            marker={"size": 9, "symbol": "diamond", "color": "black"},
+            name="Archetypes",
+            hovertemplate="%{text}<extra></extra>",
+        )
+
+        projection_fig.update_yaxes(scaleanchor="x", scaleratio=1)
+
     projection_fig.update_layout(dragmode="lasso")
 
     projection_plot = mo.ui.plotly(projection_fig)
     projection_plot
+
     return projection_fig, projection_plot
 
 
@@ -221,19 +309,39 @@ def _(
 
 @app.cell
 def _(embeddings, mo, pl, projection_fig, projection_plot):
-    _rows = {
-        int(projection_fig.data[p["curveNumber"]].customdata[p["pointIndex"]][0])
-        for p in projection_plot.value
-        if "curveNumber" in p and "pointIndex" in p
-    }
-    selected = embeddings.filter(pl.col("row").is_in(_rows)).select("path", "modality")
+
+    _rows = set()
+
+    for p in projection_plot.value or []:
+        _curve = p.get("curveNumber")
+        _index = p.get("pointIndex")
+
+        if _curve is None or _index is None:
+            continue
+
+        _trace = projection_fig.data[_curve]
+
+        # Ignore archetype markers and boundary lines
+        if _trace.customdata is None:
+            continue
+
+        _rows.add(int(_trace.customdata[_index][0]))
+
+    selected = embeddings.filter(
+        pl.col("row").is_in(_rows)
+    ).select("path", "modality")
 
     mo.vstack(
         [
-            mo.md(f"**{selected.height} selected**: click a point, or lasso / box-select several"),
-            mo.ui.table(selected, selection=None) if selected.height else None,
+            mo.md(
+                f"**{selected.height} selected**: "
+                "click a point, or lasso / box-select several"
+            ),
+            mo.ui.table(selected, selection=None)
+            if selected.height else None,
         ]
     )
+
     return (selected,)
 
 
