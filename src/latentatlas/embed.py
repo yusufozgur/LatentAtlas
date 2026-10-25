@@ -152,15 +152,20 @@ def main() -> None:
                 )
                 continue
 
-            # Save immediately after each successful embedding
+            # Checkpoint after every successful embedding
             write_output(
                 args.output,
                 [r for r in rows if r["embedding"] is not None],
             )
-    else:
-        write_output(args.output, rows)
-    print(f"Wrote {len(rows)} embeddings to {args.output}")
 
+    # Always synchronize output with currently existing files,
+    # including when all new embeddings failed.
+    successful_rows = [r for r in rows if r["embedding"] is not None]
+    write_output(args.output, successful_rows)
+
+    print(f"Wrote {len(successful_rows)} embeddings to {args.output}")
+
+    
 
 if __name__ == "__main__":
     main()

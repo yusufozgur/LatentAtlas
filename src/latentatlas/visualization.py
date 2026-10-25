@@ -71,8 +71,6 @@ def _(mo):
 
 @app.cell
 def _(PCA, embeddings, mo, pl, projection, px, umap):
-    # fixed color + symbol per modality, so a modality keeps its look whichever files are present
-    _modality_colors = {"image": "#2a78d6", "audio": "#eb6834", "video": "#1baf7a", "text": "#eda100"}
     _vectors = embeddings["embedding"].to_numpy()
 
     if projection.value == "UMAP":
@@ -88,25 +86,23 @@ def _(PCA, embeddings, mo, pl, projection, px, umap):
         _var = _pca.explained_variance_ratio_
         _axis_labels = {"x": f"PC1 ({_var[0]:.0%} of variance)", "y": f"PC2 ({_var[1]:.0%} of variance)"}
 
-    _points = embeddings.select(
+    points = embeddings.select(
         "row",
         pl.col("path").str.split("/").list.last().alias("file"),
         "modality",
         pl.Series("x", _xy[:, 0]),
         pl.Series("y", _xy[:, 1]),
+        pl.col("path").str.split("_").list.first().str.replace("data/","").alias("category")
     )
 
     projection_fig = px.scatter(
-        _points,
+        points,
         x="x",
         y="y",
-        color="modality",
-        symbol="modality",
+        color="category",
         hover_name="file",
         # px splits points into one trace per modality, so carry the row to map selections back
         custom_data=["row"],
-        category_orders={"modality": list(_modality_colors)},
-        color_discrete_map=_modality_colors,
         labels=_axis_labels,
         title=f"Embeddings projected to 2D with {projection.value}",
         template="plotly_white",
@@ -191,19 +187,34 @@ def _(
                 f'<div style="max-width:{THUMBNAIL_SIZE}px;font-size:0.8em;overflow-wrap:anywhere">'
                 f"{html.escape(Path(_path).name)}</div>"
             )
-            _cards.append(mo.vstack([mo.image(_png, width=THUMBNAIL_SIZE, rounded=True), _caption], gap=0.25))
+            _cards.append(
+                mo.vstack(
+                    [mo.image(_png, width=THUMBNAIL_SIZE, rounded=True), _caption],
+                    gap=0.25,
+                )
+            )
 
     _note = (
         mo.md(f"_Showing thumbnails for the first {MAX_THUMBNAILS} of {selected.height} selected._")
         if selected.height > MAX_THUMBNAILS
         else None
     )
+
+    gallery_w = 10
     if _cards:
-        _gallery = mo.vstack([_note, mo.hstack(_cards, wrap=True, justify="start", gap=1)])
+        _rows = [
+            mo.hstack(_cards[i:i+gallery_w], justify="start", gap=1)
+            for i in range(0, len(_cards), gallery_w)
+        ]
+        _gallery = mo.vstack(
+            ([_note] if _note is not None else []) + _rows,
+            gap=1,
+        )
     elif selected.height:
         _gallery = mo.md("_No thumbnails for this selection._")
     else:
         _gallery = None
+
     _gallery
     return
 
