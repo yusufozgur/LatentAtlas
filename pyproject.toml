@@ -1,14 +1,52 @@
 [project]
 name = "latentatlas"
 version = "0.1.0"
-description = "Add your description here"
+description = "Embed and visualize your multimedia gallery inside the latent space of a multimodal model."
 readme = "README.md"
-authors = [
-    { name = "Yusuf Turhan", email = "yusufozgurtr@gmail.com" }
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["embeddings", "multimodal", "visualization", "latent-space", "embeddinggemma"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pillow>=13.0.0",
+    "polars>=2.0.0",
+    "sentence-transformers>=6.2.0",
+    "tqdm>=4.70.1",
+    "transformers>=5.20.2",
+]
 
 [build-system]
-requires = ["uv_build>=0.11.21,<0.12.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+# Packages that need system libraries come from conda-forge: torchcodec is built
+# against conda-forge's ffmpeg, so transformers can decode audio/video from paths.
+[tool.pixi.dependencies]
+python = "3.14.*"
+pytorch = { version = "*", build = "cpu*" }
+torchvision = "*"
+torchcodec = "*"
+ffmpeg = "*"
+marimo = ">=0.25.1,<0.26"
+plotly = ">=7.1.0,<8"
+scikit-learn = ">=1.9.1,<2"
+umap-learn = ">=0.5.12,<0.6"
+
+[tool.pixi.pypi-dependencies]
+latentatlas = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+embed = "python -m latentatlas.embed"
+edit = "marimo edit --no-token"
