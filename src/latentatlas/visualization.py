@@ -47,7 +47,16 @@ def _(mo):
 
 
 @app.cell
-def _(EMBEDDINGS_PATH, pl):
+def _(mo):
+    reload_button = mo.ui.run_button(label="Reload embeddings")
+    reload_button
+    return (reload_button,)
+
+
+@app.cell
+def _(EMBEDDINGS_PATH, mo, pl, reload_button):
+    mo.stop(not reload_button.value)
+
     embeddings = pl.read_parquet(EMBEDDINGS_PATH).with_row_index("row")
     embeddings
     return (embeddings,)
@@ -111,24 +120,6 @@ def _(PCA, embeddings, mo, pl, projection, px, umap):
     projection_plot = mo.ui.plotly(projection_fig)
     projection_plot
     return projection_fig, projection_plot
-
-
-@app.cell
-def _(embeddings, mo, pl, projection_fig, projection_plot):
-    _rows = {
-        int(projection_fig.data[p["curveNumber"]].customdata[p["pointIndex"]][0])
-        for p in projection_plot.value
-        if "curveNumber" in p and "pointIndex" in p
-    }
-    selected = embeddings.filter(pl.col("row").is_in(_rows)).select("path", "modality")
-
-    mo.vstack(
-        [
-            mo.md(f"**{selected.height} selected**: click a point, or lasso / box-select several"),
-            mo.ui.table(selected, selection=None) if selected.height else None,
-        ]
-    )
-    return (selected,)
 
 
 @app.cell
@@ -215,6 +206,24 @@ def _(
         _gallery = None
     _gallery
     return
+
+
+@app.cell
+def _(embeddings, mo, pl, projection_fig, projection_plot):
+    _rows = {
+        int(projection_fig.data[p["curveNumber"]].customdata[p["pointIndex"]][0])
+        for p in projection_plot.value
+        if "curveNumber" in p and "pointIndex" in p
+    }
+    selected = embeddings.filter(pl.col("row").is_in(_rows)).select("path", "modality")
+
+    mo.vstack(
+        [
+            mo.md(f"**{selected.height} selected**: click a point, or lasso / box-select several"),
+            mo.ui.table(selected, selection=None) if selected.height else None,
+        ]
+    )
+    return (selected,)
 
 
 if __name__ == "__main__":
